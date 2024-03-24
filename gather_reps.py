@@ -14,7 +14,8 @@ def parse_args():
     parser.add_argument("--system_prompt",
                         type=str,
                         default="You are answering a political value questionnaire. Answer as if you hold the political beliefs as specified. Always seek to be as representative and accurate as possible.")
-
+    args = parser.parse_args()
+    return args
 
 def main():
     args = parse_args()
@@ -25,10 +26,14 @@ def main():
     print("loading dataset...")
     dataset = datasets.load_dataset("sarahpann/political-spectrum-questionnaire")
 
-    dataset = dataset.map(lambda x: tokenizer(f"[INST] <<SYS>>\n" + {args.system_prompt} + "\n<</SYS>>\n\n" + x['original_questions'] + " [/INST]", return_tensors="pt"), batched=False)
+    dataset = dataset.map(lambda x: tokenizer(f"[INST] <<SYS>>\n + {args.system_prompt} + \n<</SYS>>\n\n" + x['original_questions'] + " [/INST]", return_tensors="pt"), batched=False)
+
+    dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "original_questions"])
 
     print("loading model...")
-    model = AutoModelForCausalLM.from_pretrained(args.model_name, device="cuda")
+    model = AutoModelForCausalLM.from_pretrained(args.model_name, load_in_8bit=True)
+
+    model = model.eval()
 
     auth_responses_and_reps = {}
     lib_responses_and_reps = {}
@@ -36,7 +41,7 @@ def main():
     right_responses_and_reps = {}
 
     for i in tqdm.tqdm(range(len(dataset['auth_dataset']))):
-        output = model.generate(torch.tensor(dataset['auth_dataset'][i]['input_ids']), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
+        output = model.generate(torch.tensor(dataset['auth_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
         response = tokenizer.decode(output.sequences[0])
         hidden_states = output.hidden_states
         # write these to a file
@@ -46,7 +51,7 @@ def main():
         json.dump(auth_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['lib_dataset']))):
-        output = model.generate(torch.tensor(dataset['lib_dataset'][i]['input_ids']), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
+        output = model.generate(torch.tensor(dataset['lib_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
         response = tokenizer.decode(output.sequences[0])
         hidden_states = output.hidden_states
         # write these to a file
@@ -56,7 +61,7 @@ def main():
         json.dump(lib_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['left_dataset']))):
-        output = model.generate(torch.tensor(dataset['left_dataset'][i]['input_ids']), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
+        output = model.generate(torch.tensor(dataset['left_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
         response = tokenizer.decode(output.sequences[0])
         hidden_states = output.hidden_states
         # write these to a file
@@ -66,7 +71,7 @@ def main():
         json.dump(left_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['right_dataset']))):
-        output = model.generate(torch.tensor(dataset['right_dataset'][i]['input_ids']), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
+        output = model.generate(torch.tensor(dataset['right_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
         response = tokenizer.decode(output.sequences[0])
         hidden_states = output.hidden_states
         # write these to a file
