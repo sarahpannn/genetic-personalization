@@ -1,5 +1,6 @@
 import argparse
 import json
+import jsonlines
 
 import tqdm
 import wandb
@@ -45,38 +46,51 @@ def main():
 
     gen_config = GenerationConfig.from_pretrained(args.model_name, generation_config = gen_config)
 
+    jsonl_data = []
+
+    '''
+    json_data = [
+        {"question_id": 1, stance: "left", "response_id": 1, "response": "I am a leftist because I believe in the redistribution of wealth..."},
+        {"question_id": 1, stance: "left", "response_Id": 1,  "response": "I am a rightist because I believe in the free market..."}, ...
+    ]
+    '''
+
     for i in tqdm.tqdm(range(len(dataset['auth_dataset']))):
         for j in range(args.num_generations):
             output = model.generate(torch.tensor(dataset['auth_dataset'][i]['input_ids'].to("cuda")), )
             response = tokenizer.decode(output[0])
-            wandb.log({"type": "auth",
-                    "input": dataset['auth_dataset'][i]['original_questions'],
-                    "response": response,})
+            jsonl_data.append({"question_id": i, "stance": "auth", "response_id": j, "response": response})
+            # wandb.log({"type": "auth",
+            #         "input": dataset['auth_dataset'][i]['original_questions'],
+            #         "response": response,})
     
 
     for i in tqdm.tqdm(range(len(dataset['lib_dataset']))):
         for j in range(args.num_generations):
             output = model.generate(torch.tensor(dataset['lib_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
             response = tokenizer.decode(output[0])
-            wandb.log({"type": "lib",
-                        "input": dataset['lib_dataset'][i]['original_questions'],
-                        "response": response,})
+            jsonl_data.append({"question_id": i, "stance": "lib", "response_id": j, "response": response})
+            # wandb.log({"type": "lib",
+            #             "input": dataset['lib_dataset'][i]['original_questions'],
+            #             "response": response,})
 
 
     for i in tqdm.tqdm(range(len(dataset['left_dataset']))):
         for j in range(args.num_generations):
             output = model.generate(torch.tensor(dataset['left_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
             response = tokenizer.decode(output[0])
+            jsonl_data.append({"question_id": i, "stance": "left", "response_id": j, "response": response})
             # write these to a file
-            wandb.log({"type": "left",
-                        "input": dataset['left_dataset'][i]['original_questions'],
-                        "response": response,})
+            # wandb.log({"type": "left",
+            #             "input": dataset['left_dataset'][i]['original_questions'],
+            #             "response": response,})
 
 
     for i in tqdm.tqdm(range(len(dataset['right_dataset']))):
         for j in range(args.num_generations):
             output = model.generate(torch.tensor(dataset['right_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
             response = tokenizer.decode(output[0])
+            jsonl_data.append({"question_id": i, "stance": "right", "response_id": j, "response": response})
             # write these to a file
             wandb.log({"type": "right",
                         "input": dataset['right_dataset'][i]['original_questions'],
