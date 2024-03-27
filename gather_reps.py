@@ -1,17 +1,22 @@
-import transformers
-import datasets
-import torch
 import argparse
-import tqdm
 import json
+
+import tqdm
 import wandb
-from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+import datasets
+
+import transformers
+from transformers import AutoModelForCausalLM, AutoTokenizer, GenerationConfig
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_name", type=str, default="meta-llama/Llama-2-7b-hf")
     parser.add_argument("--output_file", type=str, default="responses_and_reps.json")
+    parser.add_argument("--generation_temp", type=float, default=0.7)
+    parser.add_argument("--num_generations", type=int, default=10)
+    parser.add_argument("--generation_length", type=int, default=150)
     parser.add_argument("--system_prompt",
                         type=str,
                         default="You are answering a political value questionnaire. Answer as if you hold the political beliefs as specified. Always seek to be as representative and accurate as possible.")
@@ -27,7 +32,7 @@ def main():
     print("loading dataset...")
     dataset = datasets.load_dataset("sarahpann/political-spectrum-questionnaire")
 
-    dataset = dataset.map(lambda x: tokenizer(f"[INST] <<SYS>>\n + {args.system_prompt} + \n<</SYS>>\n\n" + x['original_questions'] + " [/INST]", return_tensors="pt"), batched=False)
+    dataset = dataset.map(lambda x: tokenizer(f"[INST] <<SYS>>\n {args.system_prompt} \n<</SYS>>\n\n" + x['original_questions'] + " [/INST]", return_tensors="pt"), batched=False)
 
     dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "original_questions"])
 
@@ -36,68 +41,46 @@ def main():
 
     model = model.eval()
 
-    auth_responses_and_reps = {}
-    lib_responses_and_reps = {}
-    left_responses_and_reps = {}
-    right_responses_and_reps = {}
-
     wandb.init(project="political_answers")
 
+    gen_config = GenerationConfig.from_pretrained(args.model_name, generation_config = gen_config)
+
     for i in tqdm.tqdm(range(len(dataset['auth_dataset']))):
-        output = model.generate(torch.tensor(dataset['auth_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
-        response = tokenizer.decode(output.sequences[0])
-        hidden_states = output.hidden_states
-        # write these to a file
-        auth_responses_and_reps[dataset['auth_dataset'][i]['original_questions']] = [response, hidden_states]
-        wandb.log({"type": "auth",
-                   "input": dataset['auth_dataset'][i]['original_questions'],
-                   "response": response,
-                   "hidden_states": hidden_states})
+        for j in range(args.num_generations):
+            output = model.generate(torch.tensor(dataset['auth_dataset'][i]['input_ids'].to("cuda")), )
+            response = tokenizer.decode(output[0])
+            wandb.log({"type": "auth",
+                    "input": dataset['auth_dataset'][i]['original_questions'],
+                    "response": response,})
     
-    # with open(args.output_file + "_auth", "w") as f:
-    #     json.dump(auth_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['lib_dataset']))):
-        output = model.generate(torch.tensor(dataset['lib_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
-        response = tokenizer.decode(output.sequences[0])
-        hidden_states = output.hidden_states
-        # write these to a file
-        lib_responses_and_reps[dataset['lib_dataset'][i]['original_questions']] = [response, hidden_states]
-        wandb.log({"type": "lib",
-                     "input": dataset['lib_dataset'][i]['original_questions'],
-                     "response": response,
-                     "hidden_states": hidden_states})
+        for j in range(args.num_generations):
+            output = model.generate(torch.tensor(dataset['lib_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
+            response = tokenizer.decode(output[0])
+            wandb.log({"type": "lib",
+                        "input": dataset['lib_dataset'][i]['original_questions'],
+                        "response": response,})
 
-    # with open(args.output_file + "_lib", "w") as f:
-    #     json.dump(lib_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['left_dataset']))):
-        output = model.generate(torch.tensor(dataset['left_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
-        response = tokenizer.decode(output.sequences[0])
-        hidden_states = output.hidden_states
-        # write these to a file
-        left_responses_and_reps[dataset['left_dataset'][i]['original_questions']] = [response, hidden_states]
-        wandb.log({"type": "left",
-                     "input": dataset['left_dataset'][i]['original_questions'],
-                     "response": response,
-                     "hidden_states": hidden_states})
+        for j in range(args.num_generations):
+            output = model.generate(torch.tensor(dataset['left_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
+            response = tokenizer.decode(output[0])
+            # write these to a file
+            wandb.log({"type": "left",
+                        "input": dataset['left_dataset'][i]['original_questions'],
+                        "response": response,})
 
-    # with open(args.output_file + "_left", "w") as f:
-    #     json.dump(left_responses_and_reps, f)
 
     for i in tqdm.tqdm(range(len(dataset['right_dataset']))):
-        output = model.generate(torch.tensor(dataset['right_dataset'][i]['input_ids'].to("cuda")), max_new_tokens=100, output_hidden_states=True, return_dict_in_generate=True)
-        response = tokenizer.decode(output.sequences[0])
-        hidden_states = output.hidden_states
-        # write these to a file
-        right_responses_and_reps[dataset['right_dataset'][i]['original_questions']] = [response, hidden_states]
-        wandb.log({"type": "right",
-                    "input": dataset['right_dataset'][i]['original_questions'],
-                    "response": response,
-                    "hidden_states": hidden_states})
-
-    # with open(args.output_file + "_right", "w") as f:
-    #     json.dump(right_responses_and_reps, f)
+        for j in range(args.num_generations):
+            output = model.generate(torch.tensor(dataset['right_dataset'][i]['input_ids'].to("cuda")), generation_config = gen_config)
+            response = tokenizer.decode(output[0])
+            # write these to a file
+            wandb.log({"type": "right",
+                        "input": dataset['right_dataset'][i]['original_questions'],
+                        "response": response,})
 
 
 if __name__ == "__main__":
